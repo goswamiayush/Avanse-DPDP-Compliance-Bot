@@ -178,7 +178,7 @@ def generate_executive_summary(policy_text: str, analysis_df: pd.DataFrame) -> s
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.5-pro',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.2
