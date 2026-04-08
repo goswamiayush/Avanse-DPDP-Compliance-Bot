@@ -1,0 +1,18 @@
+# Python #
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Streamlit specific rules #
+.streamlit/secrets.toml
+client_secret.json
+
+# Keys and credentials #
+*.pem
+*.key
+.env
+secret*
+
+# OS specific #
+.DS_Store
+Thumbs.db

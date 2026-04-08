@@ -1,0 +1,9 @@
+streamlit
+google-genai
+pandas
+PyPDF2
+google-auth-oauthlib
+google-api-python-client
+python-dotenv
+python-docx
+python-pptx
