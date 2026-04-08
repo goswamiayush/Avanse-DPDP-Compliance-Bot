@@ -54,7 +54,7 @@ def analyze_dpdp_compliance(policy_text: str) -> pd.DataFrame:
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.5-pro',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     tools=[{"google_search": {}}],
