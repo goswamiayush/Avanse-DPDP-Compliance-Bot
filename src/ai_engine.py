@@ -47,17 +47,29 @@ def analyze_dpdp_compliance(policy_text: str) -> pd.DataFrame:
     {policy_text[:30000]}
     """
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                tools=[{"google_search": {}}],
-                temperature=0.1
+    import time
+    max_retries = 3
+    retry_delay_base = 5
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[{"google_search": {}}],
+                    temperature=0.1
+                )
             )
-        )
-        
-        raw_text = response.text.strip()
+            raw_text = response.text.strip()
+            break
+        except Exception as e:
+            error_msg = str(e)
+            if '503' in error_msg and attempt < max_retries - 1:
+                time.sleep(retry_delay_base * (attempt + 1))
+                continue
+            print(f"Error generating compliance check: {error_msg}")
+            return pd.DataFrame([{"Error": f"System encountered an error during parsing: {error_msg}"}])
         
         # Robust fallback extraction to find standard array
         import re
@@ -79,9 +91,6 @@ def analyze_dpdp_compliance(policy_text: str) -> pd.DataFrame:
             return pd.DataFrame(data)
              
         return pd.DataFrame(data)
-    except Exception as e:
-        print(f"Error generating compliance check: {e}")
-        return pd.DataFrame([{"Error": f"System encountered an error during parsing: {e}"}])
 
 def chat_with_grounding(user_message: str, document_context: str) -> str:
     """
@@ -101,17 +110,29 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
     {document_context[:50000]}
     """
     
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[system_instruction, user_message],
-            config=types.GenerateContentConfig(
-                tools=[{"google_search": {}}],
-                temperature=0.2
+    import time
+    max_retries = 3
+    retry_delay_base = 5
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[system_instruction, user_message],
+                config=types.GenerateContentConfig(
+                    tools=[{"google_search": {}}],
+                    temperature=0.2
+                )
             )
-        )
-        
-        output = response.text
+            
+            output = response.text
+            break
+        except Exception as e:
+            error_msg = str(e)
+            if '503' in error_msg and attempt < max_retries - 1:
+                time.sleep(retry_delay_base * (attempt + 1))
+                continue
+            return f"System encountered an error during advisory synthesis: {error_msg}"
         
         if hasattr(response, 'candidates') and response.candidates:
             candidate = response.candidates[0]
@@ -124,8 +145,6 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
                             output += f"[{idx+1}] [{chunk.web.title}]({chunk.web.uri})\n"
                             
         return output
-    except Exception as e:
-        return f"System encountered an error during advisory synthesis: {e}"
 
 def generate_executive_summary(policy_text: str, analysis_df: pd.DataFrame) -> str:
     """
@@ -152,14 +171,23 @@ def generate_executive_summary(policy_text: str, analysis_df: pd.DataFrame) -> s
     {policy_text[:3000]}
     """
     
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.2
+    import time
+    max_retries = 3
+    retry_delay_base = 5
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2
+                )
             )
-        )
-        return response.text
-    except Exception as e:
-        return f"**System Warning:** Unable to generate executive summary due to API timeout or error: {str(e)}"
+            return response.text
+        except Exception as e:
+            error_msg = str(e)
+            if '503' in error_msg and attempt < max_retries - 1:
+                time.sleep(retry_delay_base * (attempt + 1))
+                continue
+            return f"**System Warning:** Unable to generate executive summary due to API timeout or error: {error_msg}"
