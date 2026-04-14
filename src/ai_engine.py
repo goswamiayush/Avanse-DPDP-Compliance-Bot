@@ -48,8 +48,8 @@ def analyze_dpdp_compliance(policy_text: str) -> pd.DataFrame:
     """
 
     import time
-    max_retries = 3
-    retry_delay_base = 5
+    max_retries = 6
+    retry_delay_base = 10
     
     for attempt in range(max_retries):
         try:
@@ -65,7 +65,7 @@ def analyze_dpdp_compliance(policy_text: str) -> pd.DataFrame:
             break
         except Exception as e:
             error_msg = str(e)
-            if '503' in error_msg and attempt < max_retries - 1:
+            if ('503' in error_msg or '429' in error_msg) and attempt < max_retries - 1:
                 time.sleep(retry_delay_base * (attempt + 1))
                 continue
             print(f"Error generating compliance check: {error_msg}")
@@ -111,8 +111,8 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
     """
     
     import time
-    max_retries = 3
-    retry_delay_base = 5
+    max_retries = 6
+    retry_delay_base = 10
     
     for attempt in range(max_retries):
         try:
@@ -129,7 +129,7 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
             break
         except Exception as e:
             error_msg = str(e)
-            if '503' in error_msg and attempt < max_retries - 1:
+            if ('503' in error_msg or '429' in error_msg) and attempt < max_retries - 1:
                 time.sleep(retry_delay_base * (attempt + 1))
                 continue
             return f"System encountered an error during advisory synthesis: {error_msg}"
@@ -172,8 +172,8 @@ def generate_executive_summary(policy_text: str, analysis_df: pd.DataFrame) -> s
     """
     
     import time
-    max_retries = 3
-    retry_delay_base = 5
+    max_retries = 6
+    retry_delay_base = 10
     
     for attempt in range(max_retries):
         try:
@@ -187,7 +187,7 @@ def generate_executive_summary(policy_text: str, analysis_df: pd.DataFrame) -> s
             return response.text
         except Exception as e:
             error_msg = str(e)
-            if '503' in error_msg and attempt < max_retries - 1:
+            if ('503' in error_msg or '429' in error_msg) and attempt < max_retries - 1:
                 time.sleep(retry_delay_base * (attempt + 1))
                 continue
             return f"**System Warning:** Unable to generate executive summary due to API timeout or error: {error_msg}"

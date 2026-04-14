@@ -32,21 +32,26 @@ def render_main_interface():
                 
                 # Run analysis
                 report_df = analyze_dpdp_compliance(text_content)
-                if report_df is not None and not report_df.empty:
-                    st.session_state['compliance_report'] = report_df
-                    
-                    # Run Summary if this is a valid tabular report
-                    if 'Message' not in report_df.columns or len(report_df.columns) > 1:
-                        st.info("Applying a 2-minute API cooldown to respect Free Tier limits... please wait.")
-                        import time
-                        time.sleep(120)
-                        with st.spinner("Synthesizing Executive Briefing..."):
-                            summary = generate_executive_summary(text_content, report_df)
-                            st.session_state['executive_summary'] = summary
-                            
-                    st.success(f"Assessment completed across {len(file_names)} document(s).")
+                if report_df is not None:
+                    if "Error" in report_df.columns:
+                        st.error(report_df.iloc[0]["Error"])
+                    elif report_df.empty:
+                        st.warning("The framework executed, but returned an empty assessment. Please verify the document format and content.")
+                    else:
+                        st.session_state['compliance_report'] = report_df
+                        
+                        # Run Summary if this is a valid tabular report
+                        if 'Message' not in report_df.columns or len(report_df.columns) > 1:
+                            st.info("Applying a 2-minute API cooldown to respect Free Tier limits... please wait.")
+                            import time
+                            time.sleep(120)
+                            with st.spinner("Synthesizing Executive Briefing..."):
+                                summary = generate_executive_summary(text_content, report_df)
+                                st.session_state['executive_summary'] = summary
+                                
+                        st.success(f"Assessment completed across {len(file_names)} document(s).")
                 else:
-                    st.error("Failed to execute compliance framework on the provided documents.")
+                    st.error("Failed to execute compliance framework: An unexpected system error occurred.")
 
     # Assessment Overview
     if 'executive_summary' in st.session_state:
