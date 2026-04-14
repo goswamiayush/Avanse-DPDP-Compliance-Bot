@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.document_processor import process_uploaded_files
-from src.ai_engine import analyze_dpdp_compliance, chat_with_grounding, generate_executive_summary
+from src.ai_engine import analyze_dpdp_compliance, chat_with_grounding
 
 def apply_color_coding(val):
     if val == 'Compliant':
@@ -31,7 +31,7 @@ def render_main_interface():
                 st.session_state['file_names'] = file_names
                 
                 # Run analysis
-                report_df = analyze_dpdp_compliance(text_content)
+                report_df, executive_summary = analyze_dpdp_compliance(text_content)
                 if report_df is not None:
                     if "Error" in report_df.columns:
                         st.error(report_df.iloc[0]["Error"])
@@ -40,14 +40,8 @@ def render_main_interface():
                     else:
                         st.session_state['compliance_report'] = report_df
                         
-                        # Run Summary if this is a valid tabular report
-                        if 'Message' not in report_df.columns or len(report_df.columns) > 1:
-                            st.info("Applying a 2-minute API cooldown to respect Free Tier limits... please wait.")
-                            import time
-                            time.sleep(120)
-                            with st.spinner("Synthesizing Executive Briefing..."):
-                                summary = generate_executive_summary(text_content, report_df)
-                                st.session_state['executive_summary'] = summary
+                        if executive_summary:
+                            st.session_state['executive_summary'] = executive_summary
                                 
                         st.success(f"Assessment completed across {len(file_names)} document(s).")
                 else:
