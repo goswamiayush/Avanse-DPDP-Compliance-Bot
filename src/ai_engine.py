@@ -85,18 +85,31 @@ def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]
     if raw_text is None:
         return pd.DataFrame([{"Error": "All retries exhausted. The AI service is temporarily unavailable."}]), None
 
-    # Robust fallback extraction to find standard JSON object
-    match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group(0))
-            exec_summary = data.get("executive_summary", "No summary provided.")
-            gap_data = data.get("gap_analysis", [])
-        except json.JSONDecodeError:
-            gap_data = [{"Message": "Warning: The AI responded with an unparseable format."}]
-            exec_summary = None
+    # Step 1: Strip markdown code fences if the model wrapped the JSON (e.g. ```json ... ```)
+    clean_text = raw_text.strip()
+    if clean_text.startswith("```"):
+        clean_text = re.sub(r'^```(?:json)?\s*\n?', '', clean_text)
+        clean_text = re.sub(r'\n?```\s*$', '', clean_text)
+        clean_text = clean_text.strip()
+
+    # Step 2: Try a direct JSON parse on the cleaned text first
+    data = None
+    try:
+        data = json.loads(clean_text)
+    except json.JSONDecodeError:
+        # Step 3: Fall back to regex extraction of the first {...} block
+        match = re.search(r"\{.*\}", clean_text, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+    if data is not None:
+        exec_summary = data.get("executive_summary", "No summary provided.")
+        gap_data = data.get("gap_analysis", [])
     else:
-        # If the model didn't return an object at all, assume it's an applicability message
+        # Model did not return parseable JSON at all
         gap_data = [{"Message": raw_text}]
         exec_summary = None
 
