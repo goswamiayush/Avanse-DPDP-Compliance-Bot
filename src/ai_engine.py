@@ -85,6 +85,11 @@ def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]
     if raw_text is None:
         return pd.DataFrame([{"Error": "All retries exhausted. The AI service is temporarily unavailable."}]), None
 
+    # DEBUG: Log raw model response to Streamlit Cloud logs
+    print("=== RAW AI RESPONSE (first 2000 chars) ===")
+    print(raw_text[:2000])
+    print("=== END RAW RESPONSE ===")
+
     # Step 1: Strip markdown code fences if the model wrapped the JSON (e.g. ```json ... ```)
     clean_text = raw_text.strip()
     if clean_text.startswith("```"):
@@ -96,24 +101,27 @@ def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]
     data = None
     try:
         data = json.loads(clean_text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as je:
+        print(f"Direct JSON parse failed: {je}")
         # Step 3: Fall back to regex extraction of the first {...} block
         match = re.search(r"\{.*\}", clean_text, re.DOTALL)
         if match:
             try:
                 data = json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as je2:
+                print(f"Regex JSON parse also failed: {je2}")
 
     if data is not None:
         exec_summary = data.get("executive_summary", "No summary provided.")
         gap_data = data.get("gap_analysis", [])
+        print(f"DEBUG: gap_analysis has {len(gap_data)} items. Keys in data: {list(data.keys())}")
     else:
-        # Model did not return parseable JSON at all
+        print("DEBUG: Could not parse any JSON from the response.")
         gap_data = [{"Message": raw_text}]
         exec_summary = None
 
     if not gap_data:
+        print(f"DEBUG: gap_data is empty. exec_summary={exec_summary[:100] if exec_summary else None}")
         if exec_summary and "does not hold implications" in exec_summary:
             gap_data = [{"Message": exec_summary}]
         else:
