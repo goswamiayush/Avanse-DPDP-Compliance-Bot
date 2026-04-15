@@ -56,9 +56,11 @@ def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]
     """
 
     import time
+    import re
     max_retries = 6
     retry_delay_base = 10
-    
+    raw_text = None
+
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -78,30 +80,33 @@ def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]
                 continue
             print(f"Error generating compliance check: {error_msg}")
             return pd.DataFrame([{"Error": f"System encountered an error during parsing: {error_msg}"}]), None
-        
-        # Robust fallback extraction to find standard object
-        import re
-        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group(0))
-                exec_summary = data.get("executive_summary", "No summary provided.")
-                gap_data = data.get("gap_analysis", [])
-            except json.JSONDecodeError:
-                gap_data = [{"Message": "Warning: The AI responded with an unparseable format."}]
-                exec_summary = None
-        else:
-            # If the model didn't return an object at all, assume it's an applicability message
-            gap_data = [{"Message": raw_text}]
+
+    # If all retries exhausted without a response
+    if raw_text is None:
+        return pd.DataFrame([{"Error": "All retries exhausted. The AI service is temporarily unavailable."}]), None
+
+    # Robust fallback extraction to find standard JSON object
+    match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+            exec_summary = data.get("executive_summary", "No summary provided.")
+            gap_data = data.get("gap_analysis", [])
+        except json.JSONDecodeError:
+            gap_data = [{"Message": "Warning: The AI responded with an unparseable format."}]
             exec_summary = None
-        
-        if not gap_data:
-            if exec_summary and "does not hold implications" in exec_summary:
-                gap_data = [{"Message": exec_summary}]
-            else:
-                 gap_data = [{"Message": "No compliance gaps identified based on the provided policies."}]
-                 
-        return pd.DataFrame(gap_data), exec_summary
+    else:
+        # If the model didn't return an object at all, assume it's an applicability message
+        gap_data = [{"Message": raw_text}]
+        exec_summary = None
+
+    if not gap_data:
+        if exec_summary and "does not hold implications" in exec_summary:
+            gap_data = [{"Message": exec_summary}]
+        else:
+            gap_data = [{"Message": "No compliance gaps identified based on the provided policies."}]
+
+    return pd.DataFrame(gap_data), exec_summary
 
 def chat_with_grounding(user_message: str, document_context: str) -> str:
     """
@@ -124,7 +129,9 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
     import time
     max_retries = 6
     retry_delay_base = 10
-    
+    output = None
+    response = None
+
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -135,7 +142,6 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
                     temperature=0.2
                 )
             )
-            
             output = response.text
             break
         except Exception as e:
@@ -144,16 +150,19 @@ def chat_with_grounding(user_message: str, document_context: str) -> str:
                 time.sleep(retry_delay_base * (attempt + 1))
                 continue
             return f"System encountered an error during advisory synthesis: {error_msg}"
-        
-        if hasattr(response, 'candidates') and response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                metadata = candidate.grounding_metadata
-                if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
-                    output += "\n\n**Citations:**\n"
-                    for idx, chunk in enumerate(metadata.grounding_chunks):
-                        if hasattr(chunk, 'web') and chunk.web:
-                            output += f"[{idx+1}] [{chunk.web.title}]({chunk.web.uri})\n"
-                            
-        return output
+
+    if output is None:
+        return "All retries exhausted. The AI service is temporarily unavailable."
+
+    if response and hasattr(response, 'candidates') and response.candidates:
+        candidate = response.candidates[0]
+        if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+            metadata = candidate.grounding_metadata
+            if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
+                output += "\n\n**Citations:**\n"
+                for idx, chunk in enumerate(metadata.grounding_chunks):
+                    if hasattr(chunk, 'web') and chunk.web:
+                        output += f"[{idx+1}] [{chunk.web.title}]({chunk.web.uri})\n"
+
+    return output
 
