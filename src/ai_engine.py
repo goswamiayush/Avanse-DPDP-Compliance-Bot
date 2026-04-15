@@ -19,17 +19,22 @@ AVAILABLE_MODELS = {
     "🧠 Gemini 2.5 Pro (More Thorough)": "gemini-2.5-pro",
 }
 
-def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flash") -> tuple[pd.DataFrame, str | None]:
+
+def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flash"):
     """
-    Evaluates the given IT policy against the DPDP Act using a two-step approach:
-    Step 1: Google Search grounding to fetch accurate, up-to-date DPDP regulatory context.
-    Step 2: Exhaustive structured JSON analysis using the grounded context + document.
+    Two-step DPDP compliance analysis:
+      Step 1 — Google Search grounding for verified DPDP regulatory context.
+      Step 2 — Two-phase JSON analysis:
+                Phase A: Identify document type & gate DPDP applicability.
+                Phase B: Exhaustive gap analysis (only if applicable).
+
+    Returns: (DataFrame, executive_summary, document_type, dpdp_applicable)
     """
     import time
     import re
 
     def call_model(contents, config, max_retries=4, delay_base=15):
-        """Helper: call the selected Gemini model with retries on 429/503."""
+        """Call the selected Gemini model with retry on 429/503."""
         for attempt in range(max_retries):
             try:
                 return client.models.generate_content(
@@ -41,13 +46,13 @@ def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flas
                 err = str(e)
                 if ('429' in err or '503' in err) and attempt < max_retries - 1:
                     wait = delay_base * (attempt + 1)
-                    print(f"Rate limit hit, retrying in {wait}s (attempt {attempt+1}/{max_retries})")
+                    print(f"Rate limit — retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait)
                     continue
                 raise
         return None
 
-    # ── STEP 1: Google Search Grounding — fetch verified DPDP regulatory context ─
+    # ── STEP 1: Google Search Grounding — verified DPDP regulatory context ────
     grounding_prompt = (
         "Provide a comprehensive and exhaustive summary of ALL compliance obligations under the "
         "Digital Personal Data Protection (DPDP) Act, 2023 (India). "
@@ -58,7 +63,7 @@ def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flas
         "Section 11 (Right to access information), Section 12 (Right to correction and erasure), "
         "Section 13 (Right of grievance redressal), Section 14 (Right to nominate), "
         "Section 16 (Exemptions), Section 17 (Additional exemptions), "
-        "Section 33 (Penalties — up to ₹250 crore), Section 36 (Data Protection Board). "
+        "Section 33 (Penalties — up to Rs.250 crore), Section 36 (Data Protection Board). "
         "For each section, state: the exact obligation, who it applies to, and what non-compliance looks like. "
         "Be precise, exhaustive, and cite section numbers exactly."
     )
@@ -83,59 +88,85 @@ def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flas
             "Sec 5: Data Fiduciary must give clear, itemized notice before/during consent.\n"
             "Sec 6: Consent must be free, specific, informed, unconditional, and unambiguous.\n"
             "Sec 7: Legitimate uses (state functions, medical emergencies, employment).\n"
-            "Sec 8: Data Fiduciary obligations — accuracy, security safeguards, breach notification within 72 hours, erasure when purpose fulfilled.\n"
+            "Sec 8: Data Fiduciary obligations — accuracy, security safeguards, breach notification, erasure when purpose fulfilled.\n"
             "Sec 9: Verifiable parental consent for minors; no behavioural tracking of children.\n"
             "Sec 10: Significant Data Fiduciaries — DPIA, data audits, DPO appointment.\n"
-            "Sec 11: Right to access — summary of data processed, processing activities, list of other fiduciaries.\n"
+            "Sec 11: Right to access — summary of data processed, processing activities.\n"
             "Sec 12: Right to correction, completion, updating, erasure of personal data.\n"
             "Sec 13: Grievance redressal mechanism mandatory.\n"
             "Sec 14: Right to nominate another person to exercise rights in case of death/incapacity.\n"
-            "Sec 16: Government exemptions for national security, law enforcement.\n"
-            "Sec 33: Penalties — up to ₹250 crore per breach instance.\n"
+            "Sec 33: Penalties — up to Rs.250 crore per breach instance.\n"
             "Sec 36: Data Protection Board adjudicates complaints."
         )
 
-    # ── STEP 2: Exhaustive JSON Compliance Analysis ───────────────────────────
+    # ── STEP 2: Two-Phase JSON Analysis ──────────────────────────────────────
     analysis_prompt = f"""
-You are a Partner-level IT Compliance & Risk Advisor at a Big-4 consulting firm (McKinsey/Deloitte/PwC standard).
-You are conducting a formal DPDP Act compliance audit of a client's policy document.
+You are a Partner-level IT Compliance & Risk Advisor at a Big-4 consulting firm.
 Your report will be presented directly to the client's Board of Directors and CISO.
 
 === VERIFIED DPDP REGULATORY CONTEXT (Google Search Grounded) ===
 {grounded_context[:10000]}
 
-=== YOUR MANDATE ===
-Perform an EXHAUSTIVE, section-by-section compliance gap analysis. You MUST:
-1. Evaluate the policy against EVERY DPDP section listed in the regulatory context above.
-2. Identify ALL clauses in the document that are Compliant with DPDP.
-3. Identify ALL clauses in the document that are Non-Compliant with DPDP (present but inadequate).
-4. Identify ALL DPDP requirements that are COMPLETELY MISSING from the document.
-5. Produce AT LEAST 15-20 findings. A report with fewer than 10 findings is UNACCEPTABLE for a top-tier audit.
-6. The executive_summary must be 5-7 crisp bullet points using • symbols, highlight critical risk areas, overall compliance posture, and top 3 recommended actions.
+=== PHASE A — DOCUMENT IDENTIFICATION (MANDATORY FIRST STEP) ===
+Carefully read the uploaded document below and determine:
 
-Each finding must reference the exact DPDP section number.
+1. What type of document is this? Be specific.
+   Examples: "IT Security Policy", "Data Privacy Policy", "Employee Handbook",
+   "Invoice / Financial Document", "Academic Research Paper", "News Article",
+   "Product Brochure", "Legal Contract", "Random PDF", "Technical Manual", etc.
 
-Return ONLY valid JSON — no preamble, no markdown fences, no explanation outside the JSON.
+2. Is this a formal organisational policy, procedure, standard, or governance document?
+   Answer: true or false
+
+3. Does this document directly involve the collection, storage, processing, transfer,
+   or sharing of PERSONAL DATA of identifiable individuals?
+   Answer: true or false
+
+4. DPDP Applicability Decision:
+   Set dpdp_applicable = true ONLY IF:
+     - The document IS a formal policy/procedure/governance document, AND
+     - It directly involves personal data of identifiable individuals.
+   Set dpdp_applicable = false for:
+     - Invoices, receipts, financial statements
+     - Research papers, academic articles, news
+     - Product brochures, marketing material
+     - Random or unrelated PDFs
+     - Any non-policy document
+
+=== PHASE B — COMPLIANCE ANALYSIS ===
+
+IF dpdp_applicable is TRUE:
+  Perform an EXHAUSTIVE section-by-section gap analysis. You MUST:
+  - Evaluate the policy against EVERY DPDP section in the regulatory context.
+  - Identify ALL Compliant, Non-Compliant, and Missing items.
+  - Produce AT LEAST 15-25 detailed findings.
+  - Executive summary: 5-7 bullet points — document identified, overall posture, top 3 critical gaps, top recommendation.
+
+IF dpdp_applicable is FALSE:
+  - Set gap_analysis to an empty array: []
+  - DO NOT fabricate or invent any compliance findings.
+  - Executive summary must clearly state:
+    * What the document actually IS (be specific about content)
+    * Why DPDP does NOT apply to it
+    * That no compliance assessment has been conducted
+
+Return ONLY valid JSON. No preamble, no markdown fences, no explanation outside the JSON.
 
 {{
-  "executive_summary": "• Bullet 1 (Overall posture)\\n• Bullet 2 (Critical gap 1)\\n• Bullet 3 (Critical gap 2)\\n• Bullet 4 (Compliant area)\\n• Bullet 5 (Top recommendation)",
+  "document_type": "Specific type of the uploaded document",
+  "dpdp_applicable": true,
+  "executive_summary": "• Document identified: [type]\\n• [Posture / Not applicable reason]\\n• [Finding or explanation]\\n• [Recommendation if applicable]",
   "gap_analysis": [
     {{
-      "Key Pointer of the Policy Given": "Exact description of the policy clause or, for 'Missing' items, the DPDP requirement that is absent",
+      "Key Pointer of the Policy Given": "Exact policy clause or absent DPDP requirement",
       "Compliant or Non-Compliant": "Compliant",
-      "Missing Pointers": "N/A (if Compliant) OR specific remediation action required",
-      "DPDP Article/Guideline Number": "Section X, DPDP Act 2023 — [brief section title]"
+      "Missing Pointers": "N/A or specific remediation action",
+      "DPDP Article/Guideline Number": "Section X, DPDP Act 2023 — [section title]"
     }}
   ]
 }}
 
-If the document has ZERO applicability to personal data or data protection (e.g., a purely financial/HR/procurement policy), return:
-{{
-  "executive_summary": "The uploaded policy type does not hold implications under the DPDP Act.",
-  "gap_analysis": []
-}}
-
-=== CLIENT POLICY DOCUMENT ===
+=== UPLOADED DOCUMENT ===
 {policy_text[:28000]}
 """
 
@@ -153,10 +184,10 @@ If the document has ZERO applicability to personal data or data protection (e.g.
     except Exception as e:
         error_msg = str(e)
         print(f"Analysis step error: {error_msg}")
-        return pd.DataFrame([{"Error": f"AI analysis error: {error_msg}"}]), None
+        return pd.DataFrame([{"Error": f"AI analysis error: {error_msg}"}]), None, "Unknown", False
 
     if raw_text is None:
-        return pd.DataFrame([{"Error": "AI service returned no content. Please try again."}]), None
+        return pd.DataFrame([{"Error": "AI service returned no content. Please retry."}]), None, "Unknown", False
 
     # ── Parse JSON (with fallback fence-stripping) ────────────────────────────
     data = None
@@ -178,18 +209,20 @@ If the document has ZERO applicability to personal data or data protection (e.g.
     if data is not None:
         exec_summary = data.get("executive_summary", "No summary provided.")
         gap_data = data.get("gap_analysis", [])
-        print(f"Analysis complete: {len(gap_data)} findings produced.")
+        document_type = data.get("document_type", "Unknown document type")
+        dpdp_applicable = data.get("dpdp_applicable", True)
+        print(f"Document: '{document_type}' | Applicable: {dpdp_applicable} | Findings: {len(gap_data)}")
     else:
-        gap_data = [{"Message": f"Could not parse response. Raw: {raw_text[:500]}"}]
         exec_summary = None
+        gap_data = [{"Message": f"Could not parse AI response. Raw output: {raw_text[:500]}"}]
+        document_type = "Unknown"
+        dpdp_applicable = False
 
-    if not gap_data:
-        if exec_summary and "does not hold implications" in exec_summary:
-            gap_data = [{"Message": exec_summary}]
-        else:
-            gap_data = [{"Message": "No compliance gaps identified. Please verify the document content is relevant to personal data processing."}]
+    if dpdp_applicable and not gap_data:
+        gap_data = [{"Message": "No specific compliance gaps identified. Please verify the document contains sufficient policy detail."}]
 
-    return pd.DataFrame(gap_data), exec_summary
+    result_df = pd.DataFrame(gap_data) if gap_data else pd.DataFrame()
+    return result_df, exec_summary, document_type, dpdp_applicable
 
 
 def chat_with_grounding(user_message: str, document_context: str, model_name: str = "gemini-2.5-flash") -> str:
@@ -199,14 +232,14 @@ def chat_with_grounding(user_message: str, document_context: str, model_name: st
     system_instruction = f"""
     You are a Senior Advisory Consultant and DPDP Regulatory Expert at a top-tier consulting firm.
     Your role is to address the client's queries regarding the uploaded IT policy and its compliance with the DPDP Act, 2023.
-    
+
     Rules:
     1. Utilize Google Search Grounding to cite the latest and most accurate DPDP rules.
     2. Quote precise DPDP Act sections, sub-sections, and article numbers where applicable.
     3. Maintain a formal, authoritative, and concise tone appropriate for top-tier enterprise consulting.
     4. Provide actionable, specific guidance — not generic advice.
     5. If the query relates to a gap in the policy, suggest exact remediation language.
-    
+
     --- Client IT Policy Context ---
     {document_context[:50000]}
     """
