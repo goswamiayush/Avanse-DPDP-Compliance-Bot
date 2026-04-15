@@ -15,113 +15,135 @@ client = genai.Client(api_key=api_key)
 
 def analyze_dpdp_compliance(policy_text: str) -> tuple[pd.DataFrame, str | None]:
     """
-    Evaluates the given IT policy against the latest DPDP guidelines using Gemini and Google Search Grounding.
-    Returns a tuple containing a DataFrame with the compliance results and a string for the executive summary.
+    Evaluates the given IT policy against the DPDP Act using a two-step approach:
+    Step 1: Google Search grounding to fetch accurate DPDP regulatory context.
+    Step 2: Structured JSON analysis using the grounded context + document.
     """
-    prompt = f"""
-    You are a Senior IT Compliance & Risk Advisor at a top-tier consulting firm. 
-    Your task is to conduct a formal assessment of the provided "client policy document" against the *latest* Digital Personal Data Protection (DPDP) Act.
-    
-    STEP 1: Applicability Check
-    Determine the type of policy uploaded. Does the DPDP Act even apply to this?
-    
-    STEP 2: Compliance Gap Analysis & Executive Summary
-    If DPDP applies, utilize Google Search Grounding to reference the most accurate, up-to-date DPDP rules, acts, and article numbers.
-    Analyze the policy and extract both standard pointers AND rules that are completely MISSING from the document but required by DPDP.
-    Finally, formulate a crisp, authoritative executive summary based on your findings (3-4 bullet points highlighting key compliance gaps or successes).
-    
-    Output ONLY a valid JSON object, with no markdown formatting outside of the string values.
-    
-    Format of the JSON object:
-    {{
-      "executive_summary": "Crisp markdown bullet points summarizing the most critical takeaways regarding Compliant, Non-Compliant, and Missing sections. State the assumed name or core topic of the policy.",
-      "gap_analysis": [
-        {{
-          "Key Pointer of the Policy Given": "Brief summary... MUST include [Page X]",
-          "Compliant or Non-Compliant": "'Compliant', 'Non-Compliant', or 'Missing'",
-          "Missing Pointers": "Remediation steps...",
-          "DPDP Article/Guideline Number": "Exact clause..."
-        }}
-      ]
-    }}
-
-    If the document has ZERO applicability to DPDP, you must still return the JSON object, but leave the gap_analysis array empty:
-    {{
-      "executive_summary": "The uploaded policy type does not hold implications under the DPDP Act.",
-      "gap_analysis": []
-    }}
-
-    --- Client Policy Document Context (including location markers) ---
-    {policy_text[:30000]}
-    """
-
     import time
     import re
-    max_retries = 6
-    retry_delay_base = 10
-    raw_text = None
 
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[{"google_search": {}}],
-                    temperature=0.1
+    def call_model(contents, config, max_retries=4, delay_base=10):
+        """Helper: call Gemini with retries on 429/503."""
+        for attempt in range(max_retries):
+            try:
+                return client.models.generate_content(
+                    model='gemini-2.0-flash',
+                    contents=contents,
+                    config=config
                 )
+            except Exception as e:
+                err = str(e)
+                if ('429' in err or '503' in err) and attempt < max_retries - 1:
+                    time.sleep(delay_base * (attempt + 1))
+                    continue
+                raise
+        return None
+
+    # ── STEP 1: Ground the DPDP regulatory context via Google Search ──────────
+    grounding_prompt = (
+        "Summarize the key compliance obligations under the Digital Personal Data Protection (DPDP) Act, 2023 (India). "
+        "Include all major sections (4 through 17), rights of Data Principals, obligations of Data Fiduciaries, "
+        "consent requirements, data localization rules, breach notification timelines, and penalties. "
+        "Be precise and cite the exact section numbers."
+    )
+    grounded_context = ""
+    try:
+        grounding_response = call_model(
+            contents=grounding_prompt,
+            config=types.GenerateContentConfig(
+                tools=[{"google_search": {}}],
+                temperature=0.1
             )
-            raw_text = response.text.strip()
-            break
-        except Exception as e:
-            error_msg = str(e)
-            if ('503' in error_msg or '429' in error_msg) and attempt < max_retries - 1:
-                time.sleep(retry_delay_base * (attempt + 1))
-                continue
-            print(f"Error generating compliance check: {error_msg}")
-            return pd.DataFrame([{"Error": f"System encountered an error during parsing: {error_msg}"}]), None
+        )
+        if grounding_response and grounding_response.text:
+            grounded_context = grounding_response.text.strip()
+    except Exception as e:
+        print(f"Grounding step failed (non-fatal): {e}")
+        grounded_context = "DPDP Act, 2023 (India): Key sections include consent (Sec 6), data fiduciary obligations (Sec 8), data principal rights (Sec 11-14), breach notification (Sec 8(6)), and penalties up to ₹250 crore (Sec 33)."
 
-    # If all retries exhausted without a response
+    # ── STEP 2: Structured JSON compliance analysis ───────────────────────────
+    analysis_prompt = f"""
+You are a Senior IT Compliance & Risk Advisor. Using the verified DPDP regulatory context below, 
+assess the provided client policy document and produce a structured compliance gap report.
+
+=== VERIFIED DPDP REGULATORY CONTEXT (Google-grounded) ===
+{grounded_context[:8000]}
+
+=== TASK ===
+Analyze the client policy document against the DPDP Act, 2023. For EVERY applicable DPDP section, determine:
+- Is it addressed in the document? (Compliant / Non-Compliant / Missing)
+- What remediation is needed if Non-Compliant or Missing?
+
+IMPORTANT: The gap_analysis array MUST NOT be empty if the document relates to data, privacy, or personal information handling.
+
+Return ONLY valid JSON. No preamble, no markdown, no explanation.
+
+{{
+  "executive_summary": "• Finding 1\\n• Finding 2\\n• Finding 3",
+  "gap_analysis": [
+    {{
+      "Key Pointer of the Policy Given": "Description of the clause or missing requirement",
+      "Compliant or Non-Compliant": "Compliant",
+      "Missing Pointers": "N/A or remediation steps",
+      "DPDP Article/Guideline Number": "Section X, DPDP Act 2023"
+    }}
+  ]
+}}
+
+If ZERO DPDP applicability, return:
+{{
+  "executive_summary": "The uploaded policy type does not hold implications under the DPDP Act.",
+  "gap_analysis": []
+}}
+
+=== CLIENT POLICY DOCUMENT ===
+{policy_text[:25000]}
+"""
+
+    raw_text = None
+    try:
+        analysis_response = call_model(
+            contents=analysis_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2
+            )
+        )
+        if analysis_response and analysis_response.text:
+            raw_text = analysis_response.text.strip()
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Analysis step error: {error_msg}")
+        return pd.DataFrame([{"Error": f"AI analysis error: {error_msg}"}]), None
+
     if raw_text is None:
-        return pd.DataFrame([{"Error": "All retries exhausted. The AI service is temporarily unavailable."}]), None
+        return pd.DataFrame([{"Error": "AI service returned no content. Please try again."}]), None
 
-    # DEBUG: Log raw model response to Streamlit Cloud logs
-    print("=== RAW AI RESPONSE (first 2000 chars) ===")
-    print(raw_text[:2000])
-    print("=== END RAW RESPONSE ===")
-
-    # Step 1: Strip markdown code fences if the model wrapped the JSON (e.g. ```json ... ```)
-    clean_text = raw_text.strip()
-    if clean_text.startswith("```"):
-        clean_text = re.sub(r'^```(?:json)?\s*\n?', '', clean_text)
-        clean_text = re.sub(r'\n?```\s*$', '', clean_text)
-        clean_text = clean_text.strip()
-
-    # Step 2: Try a direct JSON parse on the cleaned text first
+    # Parse JSON
     data = None
     try:
-        data = json.loads(clean_text)
-    except json.JSONDecodeError as je:
-        print(f"Direct JSON parse failed: {je}")
-        # Step 3: Fall back to regex extraction of the first {...} block
-        match = re.search(r"\{.*\}", clean_text, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group(0))
-            except json.JSONDecodeError as je2:
-                print(f"Regex JSON parse also failed: {je2}")
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        clean = re.sub(r'^```(?:json)?\s*\n?', '', raw_text).strip()
+        clean = re.sub(r'\n?```\s*$', '', clean).strip()
+        try:
+            data = json.loads(clean)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", clean, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    pass
 
     if data is not None:
         exec_summary = data.get("executive_summary", "No summary provided.")
         gap_data = data.get("gap_analysis", [])
-        print(f"DEBUG: gap_analysis has {len(gap_data)} items. Keys in data: {list(data.keys())}")
     else:
-        print("DEBUG: Could not parse any JSON from the response.")
-        gap_data = [{"Message": raw_text}]
+        gap_data = [{"Message": f"Could not parse response. Raw: {raw_text[:500]}"}]
         exec_summary = None
 
     if not gap_data:
-        print(f"DEBUG: gap_data is empty. exec_summary={exec_summary[:100] if exec_summary else None}")
         if exec_summary and "does not hold implications" in exec_summary:
             gap_data = [{"Message": exec_summary}]
         else:
