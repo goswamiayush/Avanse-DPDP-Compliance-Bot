@@ -67,13 +67,8 @@ def render_document_badge(document_type: str, dpdp_applicable: bool):
     )
 
 def render_main_interface():
-    # ── Analysis Configuration ────────────────────────────────────────────────
-    st.markdown("#### Analysis Configuration")
-    st.info("⚡ **Powered by Gemini 2.5 Flash:** Fast and efficient. Recommended for initial assessments.")
-    selected_model = "gemini-2.5-flash"
-    selected_model_label = "Gemini 2.5 Flash"
-
-    st.markdown("---")
+    # ── Model Configuration ────────────────────────────────────────────────
+    selected_model = "gemini-2.5-pro"
 
     # ── Document Upload ───────────────────────────────────────────────────────
     st.markdown("#### Document Acquisition")
@@ -88,7 +83,7 @@ def render_main_interface():
 
     if uploaded_files:
         if st.button("Initiate Compliance Assessment", type="primary"):
-            with st.spinner(f"Running DPDP audit via {selected_model_label}... This may take up to 90 seconds."):
+            with st.spinner("Synthesizing comprehensive DPDP compliance audit... This may take up to 90 seconds."):
                 text_content, file_names = process_uploaded_files(uploaded_files)
                 st.session_state['policy_text'] = text_content
                 st.session_state['file_names'] = file_names
@@ -199,7 +194,7 @@ def render_main_interface():
             with st.chat_message("assistant"):
                 with st.spinner("Synthesizing advisory response..."):
                     context = f"Uploaded IT Policy:\n{st.session_state['policy_text']}"
-                    active_model = st.session_state.get('selected_model', 'gemini-2.5-flash')
+                    active_model = st.session_state.get('selected_model', 'gemini-2.5-pro')
                     response = chat_with_grounding(prompt, context, active_model)
                     st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})

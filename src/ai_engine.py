@@ -16,7 +16,7 @@ client = genai.Client(api_key=api_key)
 
 
 
-def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flash"):
+def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-pro"):
     """
     Two-step DPDP compliance analysis:
       Step 1 — Google Search grounding for verified DPDP regulatory context.
@@ -221,7 +221,7 @@ Return ONLY valid JSON. No preamble, no markdown fences, no explanation outside 
     return result_df, exec_summary, document_type, dpdp_applicable
 
 
-def chat_with_grounding(user_message: str, document_context: str, model_name: str = "gemini-2.5-flash") -> str:
+def chat_with_grounding(user_message: str, document_context: str, model_name: str = "gemini-2.5-pro") -> str:
     """
     Answers questions using the uploaded documents and Google Search Grounding with a DPDP expert persona.
     """
