@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.document_processor import process_uploaded_files
-from src.ai_engine import analyze_dpdp_compliance, chat_with_grounding, AVAILABLE_MODELS
+from src.ai_engine import analyze_dpdp_compliance, chat_with_grounding
 
 def apply_color_coding(val):
     if val == 'Compliant':
@@ -67,25 +67,11 @@ def render_document_badge(document_type: str, dpdp_applicable: bool):
     )
 
 def render_main_interface():
-    # ── Model Selector ────────────────────────────────────────────────────────
+    # ── Analysis Configuration ────────────────────────────────────────────────
     st.markdown("#### Analysis Configuration")
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        selected_model_label = st.selectbox(
-            "AI Model",
-            options=list(AVAILABLE_MODELS.keys()),
-            index=0,
-            help="Flash is faster. Pro is more thorough and recommended for critical audits.",
-            key="model_selector"
-        )
-    selected_model = AVAILABLE_MODELS[selected_model_label]
-    with col2:
-        st.markdown("")
-        st.markdown("")
-        if "Pro" in selected_model_label:
-            st.info("🧠 **Pro mode:** Deep reasoning, exhaustive analysis. Takes ~60–90 seconds.")
-        else:
-            st.info("⚡ **Flash mode:** Fast and efficient. Recommended for initial assessments.")
+    st.info("⚡ **Powered by Gemini 2.5 Flash:** Fast and efficient. Recommended for initial assessments.")
+    selected_model = "gemini-2.5-flash"
+    selected_model_label = "Gemini 2.5 Flash"
 
     st.markdown("---")
 

@@ -13,11 +13,7 @@ except:
 
 client = genai.Client(api_key=api_key)
 
-# Available models for the UI selector
-AVAILABLE_MODELS = {
-    "⚡ Gemini 2.5 Flash (Faster)": "gemini-2.5-flash",
-    "🧠 Gemini 2.5 Pro (More Thorough)": "gemini-2.5-pro",
-}
+
 
 
 def analyze_dpdp_compliance(policy_text: str, model_name: str = "gemini-2.5-flash"):
